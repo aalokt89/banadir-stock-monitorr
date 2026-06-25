@@ -19,12 +19,10 @@ Sends an email via Resend ONLY if the product is in stock (not sold out).
 
 import os
 import sys
-import json
-import urllib.request
-import urllib.error
+import resend
 from playwright.sync_api import sync_playwright
 
-PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-03-extrait-de-parfum-10-ml-sample"
+PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-89-extrait-de-parfum-10-ml-sample-inspired-sedley"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 EMAIL_TO = os.environ.get("EMAIL_TO")
@@ -72,40 +70,36 @@ def check_stock_with_browser(url: str):
 
 
 def send_email(subject: str, body: str) -> None:
+    """
+    Uses Resend's official Python SDK rather than a raw urllib POST.
+
+    WHY THE SWITCH: a bare urllib request was getting blocked with
+    "Cloudflare error code: 1010" - a bot-fingerprint block triggered by
+    requests that don't look like they come from a normal HTTP client
+    library (missing standard headers, unusual TLS/request signature).
+    The official SDK sends requests the way Resend's infrastructure
+    expects, which avoids this entirely. This is the correct long-term
+    fix rather than trying to hand-craft headers to imitate a "normal"
+    client via trial and error.
+    """
     if not RESEND_API_KEY or not EMAIL_TO:
         print("Missing RESEND_API_KEY or EMAIL_TO env vars; skipping email send.", file=sys.stderr)
         sys.exit(1)
 
-    payload = json.dumps({
-        "from": EMAIL_FROM,
-        "to": [EMAIL_TO],
-        "subject": subject,
-        "text": body,
-    }).encode("utf-8")
+    resend.api_key = RESEND_API_KEY
 
-    req = urllib.request.Request(
-        "https://api.resend.com/emails",
-        data=payload,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json",
-        },
-    )
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            resp_body = resp.read().decode("utf-8")
-            print(f"Resend response ({resp.status}): {resp_body}")
-    except urllib.error.HTTPError as e:
-        # This is the important fix: previously this exception would
-        # propagate uncaught and the traceback would NOT show Resend's
-        # actual explanation for the failure - just "403 Forbidden" with
-        # no context. Resend's error responses are JSON with a `message`
-        # field explaining exactly what's wrong (bad key, unverified
-        # domain, malformed request, etc). Printing it here is the only
-        # way to actually know why, instead of guessing again.
-        error_body = e.read().decode("utf-8", errors="replace")
-        print(f"Resend API error ({e.code}): {error_body}", file=sys.stderr)
+        result = resend.Emails.send({
+            "from": EMAIL_FROM,
+            "to": [EMAIL_TO],
+            "subject": subject,
+            "html": body,
+        })
+        print(f"Resend response: {result}")
+    except Exception as e:
+        # Print whatever Resend's SDK surfaces about the failure, so a
+        # future failure is diagnosable from the log directly.
+        print(f"Resend API error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -128,8 +122,8 @@ def main():
     if in_stock:
         subject = "IN STOCK: Banadirfragrance 89 (10ml sample)"
         body = (
-            "The product is now available (not sold out).\n\n"
-            f"Link: {PRODUCT_URL}\n"
+            "<p>The product is now available (not sold out).</p>"
+            f'<p><a href="{PRODUCT_URL}">{PRODUCT_URL}</a></p>'
         )
         send_email(subject, body)
         print("Email sent.")
