@@ -23,7 +23,7 @@ import json
 import urllib.request
 from playwright.sync_api import sync_playwright
 
-PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-89-extrait-de-parfum-10-ml-sample-inspired-sedley"
+PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-03-extrait-de-parfum-10-ml-sample"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 TO_EMAIL = os.environ.get("TO_EMAIL")
