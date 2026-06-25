@@ -21,9 +21,10 @@ import os
 import sys
 import json
 import urllib.request
+import urllib.error
 from playwright.sync_api import sync_playwright
 
-PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-03-extrait-de-parfum-10-ml-sample"
+PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-89-extrait-de-parfum-10-ml-sample-inspired-sedley"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 EMAIL_TO = os.environ.get("EMAIL_TO")
@@ -91,9 +92,21 @@ def send_email(subject: str, body: str) -> None:
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        resp_body = resp.read().decode("utf-8")
-        print(f"Resend response ({resp.status}): {resp_body}")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            resp_body = resp.read().decode("utf-8")
+            print(f"Resend response ({resp.status}): {resp_body}")
+    except urllib.error.HTTPError as e:
+        # This is the important fix: previously this exception would
+        # propagate uncaught and the traceback would NOT show Resend's
+        # actual explanation for the failure - just "403 Forbidden" with
+        # no context. Resend's error responses are JSON with a `message`
+        # field explaining exactly what's wrong (bad key, unverified
+        # domain, malformed request, etc). Printing it here is the only
+        # way to actually know why, instead of guessing again.
+        error_body = e.read().decode("utf-8", errors="replace")
+        print(f"Resend API error ({e.code}): {error_body}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main():
