@@ -19,7 +19,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: pip install playwright
+        run: pip install playwright resend
 
       - name: Install Playwright's Chromium browser
         run: python -m playwright install --with-deps chromium
