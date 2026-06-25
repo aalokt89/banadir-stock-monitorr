@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 """
-Checks a Shopify product's JSON endpoint for stock availability.
+Checks a Shopify product page for stock availability using a real headless
+browser (Playwright), because this store's stock status ("Sold out" vs
+"Add to cart") is set by client-side JavaScript AFTER the initial page
+load, not baked into the server-rendered HTML.
+
+WHY THIS APPROACH:
+A plain HTTP fetch (urllib/requests) only ever sees the pre-JS HTML, which
+defaults to "Sold out" regardless of true stock - confirmed by comparing
+view-source output against the rendered page. Playwright launches a real
+(headless) Chromium browser, lets the page's JS run, waits for the stock
+button/text to settle, and THEN reads the result. This is slower per-check
+than a raw HTTP fetch but is the only reliable way to see what an actual
+visitor sees.
+
 Sends an email via Resend ONLY if the product is in stock (not sold out).
 """
 
@@ -8,43 +21,63 @@ import os
 import sys
 import json
 import urllib.request
+from playwright.sync_api import sync_playwright
 
-PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-89-extrait-de-parfum-10-ml-sample-inspired-sedley"
-JSON_URL = PRODUCT_URL + ".json"
+PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-03-extrait-de-parfum-10-ml-sample"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-TO_EMAIL = os.environ.get("TO_EMAIL")
-FROM_EMAIL = os.environ.get("FROM_EMAIL", "onboarding@resend.dev")
+EMAIL_TO = os.environ.get("EMAIL_TO")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "onboarding@resend.dev")
+
+# How long to wait (ms) after page load for client-side JS to update the
+# stock state before we read it. Generous because we'd rather be slow and
+# correct than fast and wrong.
+JS_SETTLE_TIMEOUT_MS = 8000
 
 
-def fetch_product_json(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (stock-checker)"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"Unexpected HTTP status: {resp.status}")
-        return json.loads(resp.read().decode("utf-8"))
-
-
-def is_in_stock(product_json: dict) -> bool:
+def check_stock_with_browser(url: str):
     """
-    A Shopify product can have multiple variants (e.g. different scent
-    options). We treat the product as 'available' if ANY variant is
-    available. Adjust this logic if you only care about a specific variant.
+    Returns (in_stock: bool, debug_text: str).
+
+    debug_text is the visible text near the add-to-cart area at the time
+    we checked, so logs show exactly what was read - useful for catching
+    future false positives/negatives without guessing.
     """
-    variants = product_json.get("product", {}).get("variants", [])
-    if not variants:
-        return False
-    return any(v.get("available") is True for v in variants)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(user_agent="Mozilla/5.0 (stock-checker)")
+            page.goto(url, wait_until="networkidle", timeout=30000)
+
+            # Give client-side JS extra time to settle the button/price
+            # state, even after network goes idle (some apps poll or use
+            # setTimeout rather than firing immediately on load).
+            page.wait_for_timeout(JS_SETTLE_TIMEOUT_MS)
+
+            # Pull the visible text of the whole product form area rather
+            # than the whole page, to reduce the chance of matching
+            # "Sold out" text from an unrelated section (e.g. a related
+            # products carousel). Falls back to full body text if this
+            # specific region isn't found, so we still get a signal.
+            try:
+                product_text = page.locator("main").inner_text(timeout=5000)
+            except Exception:
+                product_text = page.locator("body").inner_text(timeout=5000)
+
+            in_stock = "sold out" not in product_text.lower()
+            return in_stock, product_text[:2000]  # cap debug text length
+        finally:
+            browser.close()
 
 
 def send_email(subject: str, body: str) -> None:
-    if not RESEND_API_KEY or not TO_EMAIL:
-        print("Missing RESEND_API_KEY or TO_EMAIL env vars; skipping email send.", file=sys.stderr)
+    if not RESEND_API_KEY or not EMAIL_TO:
+        print("Missing RESEND_API_KEY or EMAIL_TO env vars; skipping email send.", file=sys.stderr)
         sys.exit(1)
 
     payload = json.dumps({
-        "from": FROM_EMAIL,
-        "to": [TO_EMAIL],
+        "from": EMAIL_FROM,
+        "to": [EMAIL_TO],
         "subject": subject,
         "text": body,
     }).encode("utf-8")
@@ -65,22 +98,24 @@ def send_email(subject: str, body: str) -> None:
 
 def main():
     try:
-        data = fetch_product_json(JSON_URL)
+        in_stock, debug_text = check_stock_with_browser(PRODUCT_URL)
     except Exception as e:
-        print(f"Error fetching product JSON: {e}", file=sys.stderr)
-        # Don't email on a fetch error - that's a script/network issue, not a stock event.
+        print(
+            f"Error checking product page with browser: {e}", file=sys.stderr)
+        # Don't email on a fetch/browser error - that's a script issue,
+        # not a real stock event.
         sys.exit(1)
 
-    in_stock = is_in_stock(data)
-    title = data.get("product", {}).get("title", "Product")
-
-    print(f"Checked: {title}")
+    print(f"Checked: {PRODUCT_URL}")
     print(f"In stock: {in_stock}")
+    print("---- Visible text snapshot (for debugging false positives/negatives) ----")
+    print(debug_text)
+    print("--------------------------------------------------------------------------")
 
     if in_stock:
-        subject = f"IN STOCK: {title}"
+        subject = "IN STOCK: Banadirfragrance 89 (10ml sample)"
         body = (
-            f"{title} is now available (not sold out).\n\n"
+            "The product is now available (not sold out).\n\n"
             f"Link: {PRODUCT_URL}\n"
         )
         send_email(subject, body)

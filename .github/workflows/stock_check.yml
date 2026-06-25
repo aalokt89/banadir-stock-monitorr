@@ -2,10 +2,7 @@ name: Stock Checker
 
 on:
   schedule:
-    # Runs at 13:00 UTC every 3rd day, starting from the 1st of the month.
-    # GitHub cron doesn't support "every N days" directly, so this approximates
-    # it by running on day-of-month 1, 4, 7, 10, ... See README for details
-    # and an alternative if you want a true rolling 3-day interval.
+    # Approximates "every 3 days" - see README for why this isn't exact.
     - cron: '0 13 1,4,7,10,13,16,19,22,25,28,31 * *'
   workflow_dispatch: {}  # lets you manually trigger a run from the Actions tab
 
@@ -21,9 +18,15 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Python dependencies
+        run: pip install playwright
+
+      - name: Install Playwright's Chromium browser
+        run: python -m playwright install --with-deps chromium
+
       - name: Run stock check
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          TO_EMAIL: ${{ secrets.TO_EMAIL }}
-          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          TO_EMAIL: ${{ secrets.EMAIL_TO }}
+          FROM_EMAIL: ${{ secrets.EMAIL_FROM }}
         run: python check_stock.py
