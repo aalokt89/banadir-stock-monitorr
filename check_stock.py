@@ -72,7 +72,7 @@ def check_stock_with_browser(url: str):
 
 def send_email(subject: str, body: str) -> None:
     if not RESEND_API_KEY or not EMAIL_TO:
-        print("Missing RESEND_API_KEY or TO_EMAIL env vars; skipping email send.", file=sys.stderr)
+        print("Missing RESEND_API_KEY or EMAIL_TO env vars; skipping email send.", file=sys.stderr)
         sys.exit(1)
 
     payload = json.dumps({
