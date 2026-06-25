@@ -18,8 +18,7 @@ FROM_EMAIL = os.environ.get("FROM_EMAIL", "onboarding@resend.dev")
 
 
 def fetch_product_json(url: str) -> dict:
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "Mozilla/5.0 (stock-checker)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (stock-checker)"})
     with urllib.request.urlopen(req, timeout=20) as resp:
         if resp.status != 200:
             raise RuntimeError(f"Unexpected HTTP status: {resp.status}")
