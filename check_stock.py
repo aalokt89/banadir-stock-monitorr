@@ -26,8 +26,8 @@ from playwright.sync_api import sync_playwright
 PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-03-extrait-de-parfum-10-ml-sample"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-TO_EMAIL = os.environ.get("TO_EMAIL")
-FROM_EMAIL = os.environ.get("FROM_EMAIL", "onboarding@resend.dev")
+EMAIL_TO = os.environ.get("EMAIL_TO")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "onboarding@resend.dev")
 
 # How long to wait (ms) after page load for client-side JS to update the
 # stock state before we read it. Generous because we'd rather be slow and
@@ -76,8 +76,8 @@ def send_email(subject: str, body: str) -> None:
         sys.exit(1)
 
     payload = json.dumps({
-        "from": FROM_EMAIL,
-        "to": [TO_EMAIL],
+        "from": EMAIL_FROM,
+        "to": [EMAIL_TO],
         "subject": subject,
         "text": body,
     }).encode("utf-8")
