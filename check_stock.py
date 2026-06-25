@@ -9,7 +9,7 @@ import sys
 import json
 import urllib.request
 
-PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-24-extrait-de-parfum-10-ml-niche-aventus?_pos=2&_sid=809b27325&_ss=r"
+PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-24-extrait-de-parfum-10-ml-niche-aventus"
 JSON_URL = PRODUCT_URL + ".json"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
