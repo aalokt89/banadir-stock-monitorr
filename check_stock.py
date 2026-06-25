@@ -1,58 +1,73 @@
 #!/usr/bin/env python3
 """
-Checks a Shopify product page for stock availability by inspecting the
-rendered HTML for the "Sold out" vs "Add to cart" button state.
+Checks a Shopify product page for stock availability using a real headless
+browser (Playwright), because this store's stock status ("Sold out" vs
+"Add to cart") is set by client-side JavaScript AFTER the initial page
+load, not baked into the server-rendered HTML.
 
-NOTE ON APPROACH: Shopify's <product>.json endpoint is normally the cleaner
-way to check stock (via variants[].available), but this store's JSON does
-NOT expose an `available` field on variants (confirmed by direct inspection
-of the JSON response - it only has inventory_management, no
-inventory_quantity or available key in the public payload). So instead we
-check the actual rendered product page text, which is what's reliably
-present for this store regardless of JSON quirks.
+WHY THIS APPROACH:
+A plain HTTP fetch (urllib/requests) only ever sees the pre-JS HTML, which
+defaults to "Sold out" regardless of true stock - confirmed by comparing
+view-source output against the rendered page. Playwright launches a real
+(headless) Chromium browser, lets the page's JS run, waits for the stock
+button/text to settle, and THEN reads the result. This is slower per-check
+than a raw HTTP fetch but is the only reliable way to see what an actual
+visitor sees.
+
+Sends an email via Resend ONLY if the product is in stock (not sold out).
 """
 
 import os
 import sys
-import re
-import urllib.request
 import json
+import urllib.request
+from playwright.sync_api import sync_playwright
 
-PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-22-extrait-de-parfum-10-ml-sample"
+PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-89-extrait-de-parfum-10-ml-sample-inspired-sedley"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 TO_EMAIL = os.environ.get("TO_EMAIL")
 FROM_EMAIL = os.environ.get("FROM_EMAIL", "onboarding@resend.dev")
 
-
-def fetch_html(url: str) -> str:
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "Mozilla/5.0 (stock-checker)"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"Unexpected HTTP status: {resp.status}")
-        return resp.read().decode("utf-8", errors="replace")
+# How long to wait (ms) after page load for client-side JS to update the
+# stock state before we read it. Generous because we'd rather be slow and
+# correct than fast and wrong.
+JS_SETTLE_TIMEOUT_MS = 8000
 
 
-def is_in_stock(html: str) -> bool:
+def check_stock_with_browser(url: str):
     """
-    Checks the rendered page for stock status text.
+    Returns (in_stock: bool, debug_text: str).
 
-    This theme renders "Sold out" near the price when the variant is
-    unavailable, and the add-to-cart button text changes from "Add to cart"
-    to "Sold out" as well. We treat the product as sold out if "Sold out"
-    appears; otherwise we treat it as in stock.
-
-    CAVEAT: this is text-matching against the live theme's markup, which is
-    less robust than structured data. If the store changes its theme, this
-    may need updating. It correctly mirrors what a human visiting the page
-    would see, which is the most honest signal available here given the
-    JSON doesn't expose it.
+    debug_text is the visible text near the add-to-cart area at the time
+    we checked, so logs show exactly what was read - useful for catching
+    future false positives/negatives without guessing.
     """
-    # Normalize whitespace to make matching reliable regardless of how the
-    # HTML wraps/indents this text.
-    normalized = re.sub(r"\s+", " ", html)
-    return "Sold out" not in normalized
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(user_agent="Mozilla/5.0 (stock-checker)")
+            page.goto(url, wait_until="networkidle", timeout=30000)
+
+            # Give client-side JS extra time to settle the button/price
+            # state, even after network goes idle (some apps poll or use
+            # setTimeout rather than firing immediately on load).
+            page.wait_for_timeout(JS_SETTLE_TIMEOUT_MS)
+
+            # Pull the visible text of the whole product form area rather
+            # than the whole page, to reduce the chance of matching
+            # "Sold out" text from an unrelated section (e.g. a related
+            # products carousel). Falls back to full body text if this
+            # specific region isn't found, so we still get a signal.
+            try:
+                product_text = page.locator("main").inner_text(timeout=5000)
+            except Exception:
+                product_text = page.locator("body").inner_text(timeout=5000)
+
+            in_stock = "sold out" not in product_text.lower()
+            return in_stock, product_text[:2000]  # cap debug text length
+        finally:
+            browser.close()
 
 
 def send_email(subject: str, body: str) -> None:
@@ -83,16 +98,19 @@ def send_email(subject: str, body: str) -> None:
 
 def main():
     try:
-        html = fetch_html(PRODUCT_URL)
+        in_stock, debug_text = check_stock_with_browser(PRODUCT_URL)
     except Exception as e:
-        print(f"Error fetching product page: {e}", file=sys.stderr)
-        # Don't email on a fetch error - that's a script/network issue, not a stock event.
+        print(
+            f"Error checking product page with browser: {e}", file=sys.stderr)
+        # Don't email on a fetch/browser error - that's a script issue,
+        # not a real stock event.
         sys.exit(1)
-
-    in_stock = is_in_stock(html)
 
     print(f"Checked: {PRODUCT_URL}")
     print(f"In stock: {in_stock}")
+    print("---- Visible text snapshot (for debugging false positives/negatives) ----")
+    print(debug_text)
+    print("--------------------------------------------------------------------------")
 
     if in_stock:
         subject = "IN STOCK: Banadirfragrance 89 (10ml sample)"
