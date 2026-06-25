@@ -27,6 +27,6 @@ jobs:
       - name: Run stock check
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          TO_EMAIL: ${{ secrets.EMAIL_TO }}
-          FROM_EMAIL: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: python check_stock.py
