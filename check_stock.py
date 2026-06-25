@@ -18,7 +18,7 @@ import re
 import urllib.request
 import json
 
-PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-03-extrait-de-parfum-10-ml-sample"
+PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-22-extrait-de-parfum-10-ml-sample"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 TO_EMAIL = os.environ.get("TO_EMAIL")
