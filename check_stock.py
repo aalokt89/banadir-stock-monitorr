@@ -9,7 +9,7 @@ import sys
 import json
 import urllib.request
 
-PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-89-extrait-de-parfum-10-ml-sample-inspired-sedley"
+PRODUCT_URL = "https://banadirfragrance.com/products/banadirfragrance-24-extrait-de-parfum-10-ml-niche-aventus?_pos=2&_sid=809b27325&_ss=r"
 JSON_URL = PRODUCT_URL + ".json"
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -18,7 +18,8 @@ FROM_EMAIL = os.environ.get("FROM_EMAIL", "onboarding@resend.dev")
 
 
 def fetch_product_json(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (stock-checker)"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Mozilla/5.0 (stock-checker)"})
     with urllib.request.urlopen(req, timeout=20) as resp:
         if resp.status != 200:
             raise RuntimeError(f"Unexpected HTTP status: {resp.status}")
