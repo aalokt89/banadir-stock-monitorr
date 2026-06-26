@@ -114,9 +114,9 @@ def main():
 
     print(f"Checked: {PRODUCT_URL}")
     print(f"In stock: {in_stock}")
-    print("---- Visible text snapshot (for debugging false positives/negatives) ----")
-    print(debug_text)
-    print("--------------------------------------------------------------------------")
+    # print("---- Visible text snapshot (for debugging false positives/negatives) ----")
+    # print(debug_text)
+    # print("--------------------------------------------------------------------------")
 
     if in_stock:
         subject = "IN STOCK: Banadirfragrance 89 (10ml sample)"
