@@ -123,7 +123,7 @@ def main():
         subject = "IN STOCK: Banadirfragrance 89 (10ml sample)"
         body = (
             "<p>The product is now available (not sold out).</p>"
-            f'<p><a href="{PRODUCT_URL}">{PRODUCT_URL}</a></p>'
+            # f'<p><a href="{PRODUCT_URL}">{PRODUCT_URL}</a></p>'
         )
         send_email(subject, body)
         print("Email sent.")
